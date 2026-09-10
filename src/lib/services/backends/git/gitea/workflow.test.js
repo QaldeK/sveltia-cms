@@ -758,6 +758,7 @@ describe('Gitea Editorial Workflow service', () => {
 
       expect(fetchAPI).toHaveBeenNthCalledWith(1, '/repos/owner/repo/pulls/1/merge', {
         method: 'POST',
+        responseType: 'raw',
         body: {
           Do: 'merge',
           delete_branch_after_merge: true,
@@ -831,8 +832,8 @@ describe('Gitea Editorial Workflow service', () => {
         publish(/** @type {any} */ ({ number: 1, branch: 'cms/posts/hello', title: 't' })),
       ).rejects.toThrow();
 
-      expect(fetchAPI).toHaveBeenCalledTimes(3);
-      expect(sleep).toHaveBeenCalledTimes(2);
+      expect(fetchAPI).toHaveBeenCalledTimes(4);
+      expect(sleep).toHaveBeenCalledTimes(3);
     });
 
     test('retries a 405 with an empty error message, as Forgejo sends', async () => {

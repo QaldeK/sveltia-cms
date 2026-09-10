@@ -313,7 +313,7 @@ describe('Config Parser', () => {
 
       /** @type {any} */
       const config = {
-        backend: { name: 'gitea', repo: 'owner/repo' },
+        backend: { name: 'test-repo', repo: 'owner/repo' },
         media_folder: '/media',
         publish_mode: 'editorial_workflow',
         collections: [
@@ -339,7 +339,7 @@ describe('Config Parser', () => {
 
       /** @type {any} */
       const config = {
-        backend: { name: 'gitea', repo: 'owner/repo' },
+        backend: { name: 'test-repo', repo: 'owner/repo' },
         media_folder: '/media',
         collections: [
           {
@@ -373,6 +373,32 @@ describe('Config Parser', () => {
             label: 'Posts',
             folder: 'content/posts',
             publish_mode: 'simple',
+            fields: [{ name: 'title', widget: 'string' }],
+          },
+        ],
+      };
+
+      parseCmsConfig(config, collectors);
+
+      const warningArray = Array.from(collectors.warnings);
+
+      expect(warningArray.some((w) => w.includes('Editorial workflow'))).toBe(false);
+    });
+
+    it('should not warn for editorial_workflow on Gitea/Forgejo', async () => {
+      const { parseCmsConfig } = await import('.');
+      const collectors = createCollectors();
+
+      /** @type {any} */
+      const config = {
+        backend: { name: 'gitea', repo: 'owner/repo' },
+        media_folder: '/media',
+        publish_mode: 'editorial_workflow',
+        collections: [
+          {
+            name: 'posts',
+            label: 'Posts',
+            folder: 'content/posts',
             fields: [{ name: 'title', widget: 'string' }],
           },
         ],

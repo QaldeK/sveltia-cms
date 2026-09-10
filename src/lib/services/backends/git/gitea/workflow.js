@@ -70,10 +70,12 @@ const STATUS_LABEL_COLORS = {
 
 /**
  * Number of merge attempts after the first one fails with the transient conflict error. An instance
- * checks a newly committed pull request for conflicts asynchronously, and merging too early fails
- * with 405 `Please try again later`, unlike GitHub and GitLab, which block the merge instead.
+ * checks a freshly committed pull request for conflicts asynchronously, and merging too early fails
+ * with 405, unlike GitHub and GitLab, which block the merge instead. The check can take a few
+ * seconds, so the retries back off.
  */
-const MAX_MERGE_RETRIES = 2;
+const MAX_MERGE_RETRIES = 3;
+const MERGE_RETRY_DELAYS = [1000, 2000, 3000];
 
 /**
  * Fetch all the items on a paginated endpoint, up to the given cap. An instance silently returns
@@ -436,8 +438,10 @@ export const publish = async (pullRequest) => {
 
   for (let attempt = 0; ; attempt += 1) {
     try {
+      // The instance answers with an empty 200 body, which the JSON parsing would reject
       await fetchAPI(`/repos/${owner}/${repo}/pulls/${pullRequest.number}/merge`, {
         method: 'POST',
+        responseType: 'raw',
         body: {
           // Forgejo’s swagger names the merge style `Do`, Gitea’s `do`; their JSON decoders are
           // case-insensitive, so the former works everywhere
@@ -459,7 +463,7 @@ export const publish = async (pullRequest) => {
         throw ex;
       }
 
-      await sleep(1000);
+      await sleep(MERGE_RETRY_DELAYS[attempt] ?? 3000);
     }
   }
 

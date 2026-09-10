@@ -42,7 +42,7 @@ const URL_OPTIONS = ['site_url'];
  * Backend services that support Editorial Workflow.
  * @type {(string | undefined)[]}
  */
-const WORKFLOW_BACKENDS = ['github', 'gitlab'];
+const WORKFLOW_BACKENDS = ['github', 'gitlab', 'gitea'];
 
 /**
  * Parse and validate the CMS configuration.
