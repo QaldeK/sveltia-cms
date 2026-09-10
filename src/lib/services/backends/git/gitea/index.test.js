@@ -39,6 +39,16 @@ vi.mock('$lib/services/backends/git/gitea/repository', () => ({
   getBaseURLs: vi.fn(() => ({ treeBaseURL: 'tree-url', blobBaseURL: 'blob-url' })),
 }));
 
+vi.mock('$lib/services/backends/git/gitea/workflow', () => ({
+  default: {
+    fetchPullRequests: vi.fn(),
+    savePullRequest: vi.fn(),
+    updateStatus: vi.fn(),
+    publish: vi.fn(),
+    discard: vi.fn(),
+  },
+}));
+
 vi.mock('$lib/services/backends/git/shared/api', () => ({
   apiConfig: {},
 }));
@@ -271,6 +281,15 @@ describe('Gitea Index Service', () => {
       expect(typeof backend.fetchLastCommit).toBe('function');
       expect(typeof backend.fetchBlob).toBe('function');
       expect(typeof backend.commitChanges).toBe('function');
+      expect(backend.workflow).toEqual(
+        expect.objectContaining({
+          fetchPullRequests: expect.any(Function),
+          savePullRequest: expect.any(Function),
+          updateStatus: expect.any(Function),
+          publish: expect.any(Function),
+          discard: expect.any(Function),
+        }),
+      );
     });
   });
 });

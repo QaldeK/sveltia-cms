@@ -51,7 +51,8 @@ export const fetchLastCommit = async () => {
  * @see https://docs.gitea.com/api/next/#tag/repository/operation/repoChangeFiles
  */
 export const commitChanges = async (changes, options) => {
-  const { owner, repo, branch } = repository;
+  const { owner, repo, branch: defaultBranch } = repository;
+  const { branch, startBranch } = options;
   const commitMessage = createCommitMessage(changes, options);
   const { name, email } = /** @type {User} */ (user.account);
   const date = new Date().toJSON();
@@ -66,23 +67,56 @@ export const commitChanges = async (changes, options) => {
     })),
   );
 
-  const { commit, files: savedFiles } = /** @type {CommitResponse} */ (
-    await fetchAPI(`/repos/${owner}/${repo}/contents`, {
-      method: 'POST',
-      body: {
-        branch,
-        author: { name, email },
-        committer: { name, email },
-        dates: { author: date, committer: date },
-        message: commitMessage,
-        files,
-      },
-    })
-  );
+  /**
+   * Commit the changes, optionally creating a new branch from the given one on the way, which is
+   * how a workflow branch comes to life on the first save.
+   * @param {string | undefined} fromBranch Branch to commit to, and the branch a new one is created
+   * from. An omitted branch makes the instance use its default one.
+   * @param {string} [newBranch] Branch to create from `fromBranch` before committing.
+   * @returns {Promise<CommitResponse>} Commit response.
+   */
+  const commit = async (fromBranch, newBranch) =>
+    /** @type {CommitResponse} */ (
+      await fetchAPI(`/repos/${owner}/${repo}/contents`, {
+        method: 'POST',
+        body: {
+          branch: fromBranch,
+          ...(newBranch ? { new_branch: newBranch } : {}),
+          author: { name, email },
+          committer: { name, email },
+          dates: { author: date, committer: date },
+          message: commitMessage,
+          files,
+        },
+      })
+    );
+
+  /** @type {CommitResponse} */
+  let response;
+
+  try {
+    response = await commit(
+      startBranch ?? branch ?? defaultBranch,
+      startBranch ? branch : undefined,
+    );
+  } catch (/** @type {any} */ ex) {
+    // Gitea/Forgejo refuse to create a branch that already exists, which happens when an earlier
+    // save was interrupted after creating it. Commit onto the existing branch instead
+    if (!startBranch || ex.cause?.status !== 409) {
+      throw ex;
+    }
+
+    response = await commit(branch ?? defaultBranch);
+  }
+
+  const {
+    commit: { sha, created },
+    files: savedFiles,
+  } = response;
 
   return {
-    sha: commit.sha,
-    date: new Date(commit.created),
+    sha,
+    date: new Date(created),
     files: Object.fromEntries(
       savedFiles.map((file, index) => [
         file?.path ?? changes[index].path,

@@ -199,6 +199,70 @@ describe('Gitea Commits Service', () => {
       expect(encodeBase64Mock).toHaveBeenCalledTimes(2);
     });
 
+    test('should commit to the branch given in the options', async () => {
+      fetchAPIMock.mockResolvedValue({
+        commit: { sha: 'ew-commit-sha', created: '2023-01-15T10:30:00Z' },
+        files: [],
+      });
+
+      await commitChanges([], { commitType: 'create', branch: 'cms/posts/hello' });
+
+      expect(fetchAPIMock).toHaveBeenCalledWith(`/repos/${mockOwner}/${mockRepo}/contents`, {
+        method: 'POST',
+        body: expect.objectContaining({ branch: 'cms/posts/hello' }),
+      });
+
+      expect(fetchAPIMock.mock.calls[0][1].body.new_branch).toBeUndefined();
+    });
+
+    test('should create the workflow branch from the source branch on the first save', async () => {
+      fetchAPIMock.mockResolvedValue({
+        commit: { sha: 'ew-commit-sha', created: '2023-01-15T10:30:00Z' },
+        files: [],
+      });
+
+      await commitChanges([], {
+        commitType: 'create',
+        branch: 'cms/posts/hello',
+        startBranch: 'main',
+      });
+
+      // The source branch receives the creation request, and the commit lands on the new branch
+      expect(fetchAPIMock).toHaveBeenCalledWith(`/repos/${mockOwner}/${mockRepo}/contents`, {
+        method: 'POST',
+        body: expect.objectContaining({ branch: 'main', new_branch: 'cms/posts/hello' }),
+      });
+    });
+
+    test('should commit to the existing workflow branch when its creation fails', async () => {
+      // An earlier save may have been interrupted after creating the branch, and the instance then
+      // refuses to create it again
+      fetchAPIMock
+        .mockRejectedValueOnce(
+          new Error('Server responded with an error', {
+            cause: { status: 409, message: 'The branch already exists' },
+          }),
+        )
+        .mockResolvedValueOnce({
+          commit: { sha: 'ew-commit-sha', created: '2023-01-15T10:30:00Z' },
+          files: [],
+        });
+
+      await commitChanges([], {
+        commitType: 'create',
+        branch: 'cms/posts/hello',
+        startBranch: 'main',
+      });
+
+      expect(fetchAPIMock).toHaveBeenCalledTimes(2);
+      expect(fetchAPIMock).toHaveBeenLastCalledWith(`/repos/${mockOwner}/${mockRepo}/contents`, {
+        method: 'POST',
+        body: expect.objectContaining({ branch: 'cms/posts/hello' }),
+      });
+
+      expect(fetchAPIMock.mock.calls[1][1].body.new_branch).toBeUndefined();
+    });
+
     test('should handle move operation correctly', async () => {
       const mockChanges = [
         {

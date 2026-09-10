@@ -15,6 +15,7 @@ import {
 } from '$lib/services/backends/git/gitea/constants';
 import { fetchBlob, fetchFiles } from '$lib/services/backends/git/gitea/files';
 import { getBaseURLs, repository } from '$lib/services/backends/git/gitea/repository';
+import workflow from '$lib/services/backends/git/gitea/workflow';
 import { apiConfig } from '$lib/services/backends/git/shared/api';
 import { initRepositoryInfo } from '$lib/services/backends/git/shared/repository';
 import { cmsConfig } from '$lib/services/config';
@@ -92,4 +93,5 @@ export default {
   fetchBlob,
   commitChanges,
   fetchFileCommits,
+  workflow,
 };
