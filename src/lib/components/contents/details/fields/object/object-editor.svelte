@@ -33,6 +33,7 @@
   import { getObjectThumbnail } from '$lib/services/contents/fields/object/thumbnail';
 
   /**
+   * @import { Snippet } from 'svelte';
    * @import {
    * EntryDraft,
    * FieldEditorContext,
@@ -50,6 +51,8 @@
    * @typedef {object} Props
    * @property {ObjectField} fieldConfig Field configuration.
    * @property {object | undefined} currentValue Field value.
+   * @property {Snippet} [headerControls] Field controls (translate button and options menu) to be
+   * rendered in the header when the `label_in_header` option is enabled.
    */
 
   const entryDraft = getEntryDraftContext();
@@ -73,6 +76,7 @@
     fieldLabel,
     fieldConfig,
     required = true,
+    headerControls = undefined,
     /* eslint-enable prefer-const */
   } = $props();
 
@@ -85,6 +89,7 @@
     collapsed,
     summary,
     thumbnail: thumbnailFieldName,
+    label_in_header: labelInHeader = false,
   } = $derived(fieldConfig);
   const { fields } = $derived(/** @type {ObjectFieldWithSubFields} */ (fieldConfig));
   const { types, typeKey = 'type' } = $derived(/** @type {ObjectFieldWithTypes} */ (fieldConfig));
@@ -284,7 +289,7 @@
   >
     {#if !hideHeader}
       <ObjectHeader
-        label={hasVariableTypes ? typeConfig?.label || type : ''}
+        label={hasVariableTypes ? typeConfig?.label || type : labelInHeader ? fieldLabel : ''}
         controlId="object-{fieldId}-item-list"
         expanded={parentExpanded}
         toggleExpanded={subFields.length
@@ -296,6 +301,9 @@
           : undefined}
       >
         {#snippet endContent()}
+          {#if labelInHeader && headerControls}
+            {@render headerControls()}
+          {/if}
           {#if hasVariableTypes}
             <Button
               size="small"

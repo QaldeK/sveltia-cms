@@ -911,6 +911,9 @@
  * @property {string} [thumbnail] Subfield name to be used as a thumbnail image for the object. It
  * will be displayed along with the summary label when the object is collapsed. The subfield must be
  * an Image or File field. Default: none.
+ * @property {boolean} [label_in_header] Whether to display the field label and the field controls
+ * (translation button, options menu) inside the object’s expander header instead of above it.
+ * Default: `false`.
  * @see https://decapcms.org/docs/widgets/#Object
  * @see https://sveltiacms.app/en/docs/fields/object
  */

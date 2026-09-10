@@ -46,6 +46,7 @@
    * Field,
    * FieldKeyPath,
    * NumberField,
+   * ObjectField,
    * StringField,
    * VisibleField,
    * } from '$lib/types/public';
@@ -195,6 +196,14 @@
   );
   const canCopy = $derived(!inEditorComponent && canTranslate && otherLocales.length);
   const canRevert = $derived(!inEditorComponent && !(canDuplicate && locale !== defaultLocale));
+  // An Object field with the `label_in_header` option delegates its label and controls to the
+  // expander header rendered by the object editor, except where that header is hidden
+  const labelInHeader = $derived(
+    fieldType === 'object' &&
+      !!(/** @type {ObjectField} */ (fieldConfig).label_in_header) &&
+      !inEditorComponent &&
+      fieldContext !== 'single-subfield-list-field',
+  );
   const keyPathRegex = $derived(new RegExp(`^${escapeRegExp(keyPath)}\\.\\d+$`));
   const valueMap = $derived(getValueMapSnapshot(entryDraft.current, locale, valueStoreKey));
   const customFieldType = $derived(customFieldTypeRegistry.get(fieldType));
@@ -291,6 +300,45 @@
   {/if}
 {/snippet}
 
+{#snippet fieldControls()}
+  {#if canCopy && ['richtext', 'markdown', 'string', 'text', 'list', 'object'].includes(fieldType)}
+    <TranslateButton size="small" {locale} {otherLocales} {keyPath} />
+  {/if}
+  {#if canCopy || canRevert}
+    <MenuButton
+      variant="ghost"
+      size="small"
+      iconic
+      disabled={pendingDeletion}
+      popupPosition="bottom-right"
+      aria-label={_('show_field_options')}
+    >
+      {#snippet popup()}
+        <Menu ariaLabel={_('field_options')}>
+          {#if canCopy}
+            <CopyMenuItems {locale} {otherLocales} {keyPath} submenu />
+          {/if}
+          <!-- A field that can be copied from another locale can be reverted as well, so the
+          menu always offers it -->
+          {#if canRevert}
+            <MenuItem
+              label={_('revert_changes')}
+              disabled={isRevertDisabled}
+              onclick={() => {
+                revertChanges({
+                  draft: /** @type {EntryDraft} */ (entryDraft.current),
+                  locale,
+                  keyPath,
+                });
+              }}
+            />
+          {/if}
+        </Menu>
+      {/snippet}
+    </MenuButton>
+  {/if}
+{/snippet}
+
 {#if entryDraft.current && canEdit && fieldType !== 'hidden'}
   <FieldEditorGroup
     aria-label={_('x_field', { values: { field: fieldLabel } })}
@@ -300,45 +348,14 @@
     hidden={fieldType === 'compute'}
   >
     <header role="none">
-      <h4 role="none" id="{fieldId}-label">{fieldLabel}</h4>
-      {#if !readonly && required}
+      <h4 role="none" id="{fieldId}-label" class:visually-hidden={labelInHeader}>
+        {fieldLabel}
+      </h4>
+      {#if !readonly && required && !labelInHeader}
         <span class="required" aria-hidden="true">*</span>
       {/if}
       <Spacer flex />
-      {#if canCopy && ['richtext', 'markdown', 'string', 'text', 'list', 'object'].includes(fieldType)}
-        <TranslateButton size="small" {locale} {otherLocales} {keyPath} />
-      {/if}
-      {#if canCopy || canRevert}
-        <MenuButton
-          variant="ghost"
-          size="small"
-          iconic
-          disabled={pendingDeletion}
-          popupPosition="bottom-right"
-          aria-label={_('show_field_options')}
-        >
-          {#snippet popup()}
-            <Menu ariaLabel={_('field_options')}>
-              {#if canCopy}
-                <CopyMenuItems {locale} {otherLocales} {keyPath} submenu />
-              {/if}
-              <!-- A field that can be copied from another locale can be reverted as well, so the
-              menu always offers it -->
-              <MenuItem
-                label={_('revert_changes')}
-                disabled={isRevertDisabled}
-                onclick={() => {
-                  revertChanges({
-                    draft: /** @type {EntryDraft} */ (entryDraft.current),
-                    locale,
-                    keyPath,
-                  });
-                }}
-              />
-            </Menu>
-          {/snippet}
-        </MenuButton>
-      {/if}
+      {#if !labelInHeader}{@render fieldControls()}{/if}
     </header>
     {#if !readonly && comment}
       <div role="none" class="comment-wrapper">
@@ -368,6 +385,7 @@
         {@render beforeInput()}
         <Editor
           {...editorProps}
+          headerControls={labelInHeader ? fieldControls : undefined}
           bind:currentValue={() => currentValue, (value) => writeValue(value)}
         />
         {@render afterInput()}
@@ -458,6 +476,16 @@
   .prefix,
   .suffix {
     color: var(--sui-secondary-foreground-color);
+    white-space: nowrap;
+  }
+
+  /* Keep the label in the DOM for `aria-labelledby` while the expander header displays it */
+  .visually-hidden {
+    position: absolute;
+    overflow: hidden;
+    clip-path: inset(50%);
+    width: 1px;
+    height: 1px;
     white-space: nowrap;
   }
 
