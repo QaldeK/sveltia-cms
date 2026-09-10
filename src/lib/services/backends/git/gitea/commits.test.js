@@ -237,19 +237,24 @@ describe('Gitea Commits Service', () => {
     test('should commit to the existing workflow branch when its creation fails', async () => {
       // An earlier save may have been interrupted after creating the branch, and the instance then
       // refuses to create it again. Forgejo answers 422, Gitea 409
+      /**
+       * Build the branch-already-exists error the instance answers with.
+       * @param {number} status HTTP status code, which differs between Forgejo and Gitea.
+       * @returns {Error} The error.
+       */
+      const failure = (status) =>
+        new Error('Server responded with an error', {
+          cause: { status, message: 'The branch already exists' },
+        });
+
+      const success = {
+        commit: { sha: 'ew-commit-sha', created: '2023-01-15T10:30:00Z' },
+        files: [],
+      };
+
       await [422, 409]
-        .map(async (status) => {
-          fetchAPIMock.mockReset();
-          fetchAPIMock
-            .mockRejectedValueOnce(
-              new Error('Server responded with an error', {
-                cause: { status, message: 'The branch already exists' },
-              }),
-            )
-            .mockResolvedValueOnce({
-              commit: { sha: 'ew-commit-sha', created: '2023-01-15T10:30:00Z' },
-              files: [],
-            });
+        .map((status) => async () => {
+          fetchAPIMock.mockRejectedValueOnce(failure(status)).mockResolvedValueOnce(success);
 
           await commitChanges([], {
             commitType: 'create',
@@ -268,7 +273,121 @@ describe('Gitea Commits Service', () => {
 
           expect(fetchAPIMock.mock.calls[1][1].body.new_branch).toBeUndefined();
         })
-        .reduce((promise, next) => promise.then(next), Promise.resolve());
+        .reduce(
+          (promise, next) => promise.then(() => next),
+          /** @type {Promise<unknown>} */ (Promise.resolve()),
+        );
+    });
+
+    test('should look up the current SHA of a file updated without one', async () => {
+      // A file living on a workflow branch is unknown to the file cache, so the caller may not know
+      // its SHA, which the update operation requires
+      fetchAPIMock.mockImplementation(async (path, options) => {
+        if (options?.method === 'POST') {
+          return {
+            commit: { sha: 'ew-commit-sha', created: '2023-01-15T10:30:00Z' },
+            files: [],
+          };
+        }
+
+        return { name: 'hello.md', path: 'content/posts/e2e-draft.md', sha: 'current-file-sha' };
+      });
+
+      await commitChanges(
+        [{ action: 'update', path: 'content/posts/e2e-draft.md', data: '# Updated' }],
+        { commitType: 'update', branch: 'cms/posts/e2e-draft' },
+      );
+
+      expect(fetchAPIMock).toHaveBeenCalledWith(
+        `/repos/${mockOwner}/${mockRepo}/contents/content/posts/e2e-draft.md` +
+          '?ref=cms%2Fposts%2Fe2e-draft',
+      );
+
+      expect(fetchAPIMock).toHaveBeenCalledTimes(2);
+      expect(fetchAPIMock).toHaveBeenLastCalledWith(`/repos/${mockOwner}/${mockRepo}/contents`, {
+        method: 'POST',
+        body: expect.objectContaining({
+          files: [
+            expect.objectContaining({
+              operation: 'update',
+              path: 'content/posts/e2e-draft.md',
+              sha: 'current-file-sha',
+            }),
+          ],
+        }),
+      });
+    });
+
+    test('should look up the SHA from the renamed file for a move', async () => {
+      fetchAPIMock.mockImplementation(async (path, options) => {
+        if (options?.method === 'POST') {
+          return {
+            commit: { sha: 'ew-commit-sha', created: '2023-01-15T10:30:00Z' },
+            files: [],
+          };
+        }
+
+        return { sha: 'renamed-file-sha' };
+      });
+
+      await commitChanges(
+        [
+          {
+            action: 'move',
+            path: 'content/posts/renamed.md',
+            previousPath: 'content/posts/original.md',
+            data: '# Renamed',
+          },
+        ],
+        { commitType: 'update', branch: 'cms/posts/e2e-draft' },
+      );
+
+      expect(fetchAPIMock).toHaveBeenCalledWith(
+        `/repos/${mockOwner}/${mockRepo}/contents/content/posts/original.md` +
+          '?ref=cms%2Fposts%2Fe2e-draft',
+      );
+
+      expect(fetchAPIMock).toHaveBeenLastCalledWith(`/repos/${mockOwner}/${mockRepo}/contents`, {
+        method: 'POST',
+        body: expect.objectContaining({
+          files: [
+            expect.objectContaining({
+              operation: 'update',
+              from_path: 'content/posts/original.md',
+              sha: 'renamed-file-sha',
+            }),
+          ],
+        }),
+      });
+    });
+
+    test('should turn an update of a missing file into a create', async () => {
+      fetchAPIMock.mockImplementation(async (path, options) => {
+        if (options?.method === 'POST') {
+          return {
+            commit: { sha: 'ew-commit-sha', created: '2023-01-15T10:30:00Z' },
+            files: [],
+          };
+        }
+
+        return Promise.reject(
+          new Error('Server responded with an error', {
+            cause: { status: 404, message: 'The target couldn’t be found.' },
+          }),
+        );
+      });
+
+      await commitChanges(
+        [{ action: 'update', path: 'content/posts/e2e-draft.md', data: '# Updated' }],
+        { commitType: 'update', branch: 'cms/posts/e2e-draft' },
+      );
+
+      expect(fetchAPIMock).toHaveBeenLastCalledWith(`/repos/${mockOwner}/${mockRepo}/contents`, {
+        method: 'POST',
+        body: expect.objectContaining({
+          files: [expect.objectContaining({ operation: 'create', sha: undefined })],
+        }),
+      });
     });
 
     test('should handle move operation correctly', async () => {

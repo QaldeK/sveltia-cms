@@ -56,15 +56,44 @@ export const commitChanges = async (changes, options) => {
   const commitMessage = createCommitMessage(changes, options);
   const { name, email } = /** @type {User} */ (user.account);
   const date = new Date().toJSON();
+  // Update and delete operations require the current blob SHA of the file, which the caller may not
+  // know for a file that only lives on a workflow branch — the file cache is filled from the
+  // configured branch only. Look it up on the target branch, and turn an update of a missing file
+  // into a create
+  const ref = branch ?? defaultBranch;
 
   const files = await Promise.all(
-    changes.map(async ({ action, path, previousPath, previousSha, data = '' }) => ({
-      operation: action === 'move' ? 'update' : action,
-      path,
-      content: await encodeBase64(data),
-      from_path: previousPath,
-      sha: previousSha,
-    })),
+    changes.map(async ({ action, path, previousPath, previousSha, data = '' }) => {
+      const operation = action === 'move' ? 'update' : action;
+      let finalOperation = operation;
+      let sha = previousSha;
+
+      if (!sha && operation !== 'create' && ref) {
+        const lookupPath = previousPath ?? path;
+
+        try {
+          ({ sha } = /** @type {{ sha: string }} */ (
+            await fetchAPI(
+              `/repos/${owner}/${repo}/contents/${encodeURI(lookupPath)}` +
+                `?ref=${encodeURIComponent(ref)}`,
+            )
+          ));
+        } catch {
+          // The file does not exist on the branch, so an update becomes a create
+          if (operation === 'update') {
+            finalOperation = 'create';
+          }
+        }
+      }
+
+      return {
+        operation: finalOperation,
+        path,
+        content: await encodeBase64(data),
+        from_path: previousPath,
+        sha,
+      };
+    }),
   );
 
   /**
