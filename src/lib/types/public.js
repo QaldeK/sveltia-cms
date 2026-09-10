@@ -464,6 +464,8 @@
  * @typedef {object} BooleanFieldProps
  * @property {'boolean'} widget Field type.
  * @property {boolean} [default] Default value. Accepts `true` or `false`.
+ * @property {boolean} [label_inline] Whether to display the field label next to the switch instead
+ * of above it. The label is clickable to toggle the switch. Default: `false`.
  * @see https://decapcms.org/docs/widgets/#Boolean
  * @see https://sveltiacms.app/en/docs/fields/boolean
  */

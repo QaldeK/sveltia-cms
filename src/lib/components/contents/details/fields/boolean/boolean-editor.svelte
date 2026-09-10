@@ -22,12 +22,16 @@
   let {
     /* eslint-disable prefer-const */
     fieldId,
+    fieldLabel,
+    fieldConfig,
     currentValue = $bindable(),
     required = true,
     readonly = false,
     invalid = false,
     /* eslint-enable prefer-const */
   } = $props();
+
+  const { label_inline: labelInline = false } = $derived(fieldConfig);
 </script>
 
 <!--
@@ -41,9 +45,18 @@
       currentValue = checked;
     }
   }
+  label={labelInline ? fieldLabel : undefined}
+  class={labelInline ? 'label-inline' : ''}
   {readonly}
   {required}
   {invalid}
-  aria-labelledby="{fieldId}-label"
+  aria-labelledby={labelInline ? undefined : `${fieldId}-label`}
   aria-errormessage="{fieldId}-error"
 />
+
+<style>
+  /* The built-in 8px gap is too tight when the label doubles as the field label */
+  :global(.sui.switch.label-inline) {
+    gap: 12px;
+  }
+</style>
