@@ -101,8 +101,9 @@ export const commitChanges = async (changes, options) => {
     );
   } catch (/** @type {any} */ ex) {
     // Gitea/Forgejo refuse to create a branch that already exists, which happens when an earlier
-    // save was interrupted after creating it. Commit onto the existing branch instead
-    if (!startBranch || ex.cause?.status !== 409) {
+    // save was interrupted after creating it. Forgejo answers 422 and Gitea 409 in that case.
+    // Commit onto the existing branch instead
+    if (!startBranch || ![409, 422].includes(ex.cause?.status)) {
       throw ex;
     }
 

@@ -452,13 +452,10 @@ export const publish = async (pullRequest) => {
       break;
     } catch (/** @type {any} */ ex) {
       // An instance checks a freshly committed pull request for conflicts asynchronously, and
-      // merging too early fails with 405 `Please try again later`. Other 405 errors, like a WIP
-      // pull request or a missing permission, are permanent
-      if (
-        attempt >= MAX_MERGE_RETRIES ||
-        ex.cause?.status !== 405 ||
-        !/try again/i.test(ex.cause?.message ?? '')
-      ) {
+      // merging too early fails with 405. Forgejo carries no consistent error message in that
+      // case, so any 405 is retried; permanent ones, like a WIP pull request, just fail again
+      // after the retries
+      if (attempt >= MAX_MERGE_RETRIES || ex.cause?.status !== 405) {
         throw ex;
       }
 

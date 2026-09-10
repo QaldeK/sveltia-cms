@@ -835,22 +835,20 @@ describe('Gitea Editorial Workflow service', () => {
       expect(sleep).toHaveBeenCalledTimes(2);
     });
 
-    test('does not retry a permanent failure', async () => {
-      vi.mocked(fetchAPI).mockRejectedValue(
-        new Error('Server responded with an error', {
-          cause: {
-            status: 405,
-            message: 'Work in progress PRs cannot be merged',
-          },
-        }),
+    test('retries a 405 with an empty error message, as Forgejo sends', async () => {
+      vi.mocked(fetchAPI)
+        .mockRejectedValueOnce(
+          new Error('Server responded with an error', { cause: { status: 405, message: '' } }),
+        )
+        .mockResolvedValueOnce({});
+
+      await publish(
+        /** @type {any} */ ({ number: 1, branch: 'cms/posts/hello', title: 't', headSHA: 'sha1' }),
       );
 
-      await expect(
-        publish(/** @type {any} */ ({ number: 1, branch: 'cms/posts/hello', title: 't' })),
-      ).rejects.toThrow();
-
-      expect(fetchAPI).toHaveBeenCalledTimes(1);
-      expect(sleep).not.toHaveBeenCalled();
+      // Two merge attempts, then the branch deletion
+      expect(fetchAPI).toHaveBeenCalledTimes(3);
+      expect(sleep).toHaveBeenCalledTimes(1);
     });
   });
 

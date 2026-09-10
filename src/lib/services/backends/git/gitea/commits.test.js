@@ -236,31 +236,39 @@ describe('Gitea Commits Service', () => {
 
     test('should commit to the existing workflow branch when its creation fails', async () => {
       // An earlier save may have been interrupted after creating the branch, and the instance then
-      // refuses to create it again
-      fetchAPIMock
-        .mockRejectedValueOnce(
-          new Error('Server responded with an error', {
-            cause: { status: 409, message: 'The branch already exists' },
-          }),
-        )
-        .mockResolvedValueOnce({
-          commit: { sha: 'ew-commit-sha', created: '2023-01-15T10:30:00Z' },
-          files: [],
-        });
+      // refuses to create it again. Forgejo answers 422, Gitea 409
+      await [422, 409]
+        .map(async (status) => {
+          fetchAPIMock.mockReset();
+          fetchAPIMock
+            .mockRejectedValueOnce(
+              new Error('Server responded with an error', {
+                cause: { status, message: 'The branch already exists' },
+              }),
+            )
+            .mockResolvedValueOnce({
+              commit: { sha: 'ew-commit-sha', created: '2023-01-15T10:30:00Z' },
+              files: [],
+            });
 
-      await commitChanges([], {
-        commitType: 'create',
-        branch: 'cms/posts/hello',
-        startBranch: 'main',
-      });
+          await commitChanges([], {
+            commitType: 'create',
+            branch: 'cms/posts/hello',
+            startBranch: 'main',
+          });
 
-      expect(fetchAPIMock).toHaveBeenCalledTimes(2);
-      expect(fetchAPIMock).toHaveBeenLastCalledWith(`/repos/${mockOwner}/${mockRepo}/contents`, {
-        method: 'POST',
-        body: expect.objectContaining({ branch: 'cms/posts/hello' }),
-      });
+          expect(fetchAPIMock).toHaveBeenCalledTimes(2);
+          expect(fetchAPIMock).toHaveBeenLastCalledWith(
+            `/repos/${mockOwner}/${mockRepo}/contents`,
+            {
+              method: 'POST',
+              body: expect.objectContaining({ branch: 'cms/posts/hello' }),
+            },
+          );
 
-      expect(fetchAPIMock.mock.calls[1][1].body.new_branch).toBeUndefined();
+          expect(fetchAPIMock.mock.calls[1][1].body.new_branch).toBeUndefined();
+        })
+        .reduce((promise, next) => promise.then(next), Promise.resolve());
     });
 
     test('should handle move operation correctly', async () => {

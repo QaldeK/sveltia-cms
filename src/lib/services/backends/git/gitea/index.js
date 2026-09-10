@@ -66,7 +66,8 @@ export const init = () => {
     apiConfig,
     /** @type {ApiEndpointConfig} */ ({
       clientId,
-      authScope: 'read:repository,write:repository,read:user',
+      // Issues and labels live outside the repository scope, and Editorial Workflow needs both
+      authScope: 'read:repository,write:repository,read:user,read:issue,write:issue',
       authURL,
       tokenURL: authURL.replace('/authorize', '/access_token'),
       restBaseURL: stripSlashes(restApiRoot),
