@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Simplified locale data used by the locale module mocks
 const mockEnData = { hello: 'Hello', world: 'World' };
+const mockFrData = { hello: 'Bonjour', world: 'Monde' };
 const mockJaData = { hello: 'こんにちは', world: '世界' };
 // Sveltia UI strings for the default locale, statically imported from the package in production
 const mockDefaultComponentStrings = { button: 'Button (bundled)' };
@@ -24,6 +25,7 @@ const mockGetPathInfo = vi.fn();
 vi.mock('$lib/locales/en-CA.yaml', () => ({ default: mockEnData }));
 vi.mock('$lib/locales/en-GB.yaml', () => ({ default: mockEnData }));
 vi.mock('$lib/locales/en-US.yaml', () => ({ default: mockEnData }));
+vi.mock('$lib/locales/fr.yaml', () => ({ default: mockFrData }));
 vi.mock('$lib/locales/ja.yaml', () => ({ default: mockJaData }));
 
 vi.mock('@sveltia/i18n', () => ({
@@ -366,12 +368,12 @@ describe('i18n', () => {
       vi.unstubAllGlobals();
     });
 
-    it('should bundle the default locale only and register loaders for the others', async () => {
+    it('should bundle the default and vendor locales only and register loaders for the others', async () => {
       const { APP_LOCALES, initAppLocale } = await import('./i18n.js');
 
       initAppLocale();
 
-      expect(mockAddMessages).toHaveBeenCalledTimes(1);
+      expect(mockAddMessages).toHaveBeenCalledTimes(2);
       // The component strings come from the `@sveltia/ui` subpath import, not from `strings`, so
       // that the other locales are not bundled
       expect(mockAddMessages).toHaveBeenCalledWith('en-US', {
@@ -379,9 +381,15 @@ describe('i18n', () => {
         world: 'World',
         _sui: mockDefaultComponentStrings,
       });
+      // The vendor-bundled locale works like the default one: eagerly added, never registered
+      expect(mockAddMessages).toHaveBeenCalledWith('fr', {
+        hello: 'Bonjour',
+        world: 'Monde',
+        _sui: mockComponentStrings.fr ?? {},
+      });
 
       expect(mockRegister.mock.calls.map(([locale]) => locale)).toEqual(
-        APP_LOCALES.filter((locale) => locale !== 'en-US'),
+        APP_LOCALES.filter((locale) => locale !== 'en-US' && locale !== 'fr'),
       );
 
       expect(mockInit).toHaveBeenCalledWith({
