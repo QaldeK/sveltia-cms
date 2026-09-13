@@ -106,8 +106,19 @@
       }
 
       // Scroll the other pane to the corresponding element, adjusting for the current scroll
-      // position and the ratio of the scroll position within the element.
-      thatPaneContentArea.scrollTop = thatElement.offsetTop - y + thatElement.clientHeight * ratio;
+      // position and the ratio of the scroll position within the element. When the target pane is
+      // an iframe, its geometry is independent from this pane’s: the pane offset must not be
+      // subtracted (it would bias the preview upwards), and the result is clamped to the
+      // scrollable range.
+      if (thatPaneContentArea.ownerDocument !== document) {
+        thatPaneContentArea.scrollTop = Math.min(
+          Math.max(thatElement.offsetTop + thatElement.clientHeight * ratio, 0),
+          thatPaneContentArea.scrollHeight - thatPaneContentArea.clientHeight,
+        );
+      } else {
+        thatPaneContentArea.scrollTop =
+          thatElement.offsetTop - y + thatElement.clientHeight * ratio;
+      }
     });
   };
 
