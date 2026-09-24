@@ -11,16 +11,24 @@ import { getPathInfo } from '@sveltia/utils/file';
 import { LocalStorage } from '@sveltia/utils/storage';
 
 import defaultLocaleStrings from '$lib/locales/en-US.yaml';
+import frLocaleStrings from '$lib/locales/fr.yaml';
 import { UNPKG_BASE_URL, version } from '$lib/services/app';
 import { PUBLISHED_LOCALE_LOADERS } from '$lib/services/app/published-locales';
 import { navigatorLocale, PREFS_STORAGE_KEY } from '$lib/services/user/prefs.svelte';
 import { createRawState, createRootEffect } from '$lib/services/utils/state.svelte';
 
 /**
- * Default application locale. This is the only locale bundled with the app; the strings for the
- * other locales are loaded from the CDN on demand.
+ * Default application locale. It’s always bundled with the app; the strings for the other locales
+ * are loaded from the CDN on demand, except the ones in {@link bundledLocaleStrings}.
  */
 const DEFAULT_APP_LOCALE = 'en-US';
+/**
+ * Locales whose strings are bundled with the app in addition to the default one, so that they work
+ * without loading anything from the CDN. Every key must have a matching statically imported
+ * `$lib/locales/*.yaml` file.
+ * @type {Record<string, Record<string, any>>}
+ */
+const bundledLocaleStrings = { fr: frLocaleStrings };
 
 /**
  * List of all the available application locales, injected by Vite at build time based on the file
@@ -276,10 +284,10 @@ const getStoredLocale = () => {
 /**
  * Load strings and initialize the locales. The Sveltia CMS strings are merged with the Sveltia UI
  * strings, the latter being prefixed with `_sui` to avoid collision. Only the
- * {@link DEFAULT_APP_LOCALE} strings are bundled with the app to keep the bundle size small. The
- * other locales are registered without strings, and those strings are fetched from the CDN once the
- * locale is first used. During development, all the locales are bundled instead, so that new
- * translations can be tested without publishing them.
+ * {@link DEFAULT_APP_LOCALE} strings and the {@link bundledLocaleStrings} are bundled with the app
+ * to keep the bundle size small. The other locales are registered without strings, and those
+ * strings are fetched from the CDN once the locale is first used. During development, all the
+ * locales are bundled instead, so that new translations can be tested without publishing them.
  * @see https://github.com/sveltia/sveltia-i18n
  * @see https://vitejs.dev/guide/features.html#glob-import
  */
@@ -314,7 +322,17 @@ export const initAppLocale = () => {
       _sui: defaultComponentStrings,
     });
 
-    APP_LOCALES.filter((locale) => locale !== DEFAULT_APP_LOCALE).forEach((locale) => {
+    // Bundled vendor locales work like the default one: added eagerly, never fetched from the CDN
+    Object.entries(bundledLocaleStrings).forEach(([locale, strings]) => {
+      addMessages(locale, {
+        ...strings,
+        _sui: componentStrings[locale] ?? {},
+      });
+    });
+
+    APP_LOCALES.filter(
+      (locale) => locale !== DEFAULT_APP_LOCALE && !(locale in bundledLocaleStrings),
+    ).forEach((locale) => {
       // Register the locale without strings so it’s listed in the language switcher; the strings
       // are loaded lazily when the locale is activated with `waitLocale()` or `locale.set()`
       register(locale, () => loadLocaleStrings(locale));
