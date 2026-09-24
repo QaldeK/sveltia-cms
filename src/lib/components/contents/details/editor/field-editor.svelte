@@ -172,6 +172,9 @@
       : undefined,
   );
   const hasExtraLabels = $derived(!!(prefix || suffix || beforeInputLabel || afterInputLabel));
+  const labelInline = $derived(
+    fieldType === 'boolean' && !!(/** @type {BooleanField} */ (fieldConfig).label_inline),
+  );
   const isList = $derived(fieldType === 'list' || multiple);
   const collection = $derived(entryDraft.current?.collection);
   const collectionFile = $derived(entryDraft.current?.collectionFile);
@@ -300,8 +303,8 @@
     hidden={fieldType === 'compute'}
   >
     <header role="none">
-      <h4 role="none" id="{fieldId}-label">{fieldLabel}</h4>
-      {#if !readonly && required}
+      <h4 role="none" id="{fieldId}-label" class:visually-hidden={labelInline}>{fieldLabel}</h4>
+      {#if !readonly && required && !labelInline}
         <span class="required" aria-hidden="true">*</span>
       {/if}
       <Spacer flex />
@@ -458,6 +461,16 @@
   .prefix,
   .suffix {
     color: var(--sui-secondary-foreground-color);
+    white-space: nowrap;
+  }
+
+  /* Keep the label in the DOM for `aria-labelledby` while the switch displays its own label */
+  .visually-hidden {
+    position: absolute;
+    overflow: hidden;
+    clip-path: inset(50%);
+    width: 1px;
+    height: 1px;
     white-space: nowrap;
   }
 
