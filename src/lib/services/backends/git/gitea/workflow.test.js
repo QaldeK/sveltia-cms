@@ -1,6 +1,5 @@
 import { decodeBase64 } from '@sveltia/utils/file';
 import { sleep } from '@sveltia/utils/misc';
-import { get } from 'svelte/store';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 
 import { commitChanges } from '$lib/services/backends/git/gitea/commits';
@@ -19,6 +18,7 @@ import giteaWorkflow, {
   updateStatus,
 } from '$lib/services/backends/git/gitea/workflow';
 import { fetchAPI } from '$lib/services/backends/git/shared/api';
+import { cmsConfig } from '$lib/services/config';
 
 vi.mock('@sveltia/utils/file', () => ({
   decodeBase64: vi.fn(),
@@ -33,11 +33,7 @@ vi.mock('$lib/services/backends/git/gitea/repository', () => ({
   repository: { owner: 'owner', repo: 'repo', branch: 'main' },
 }));
 vi.mock('$lib/services/backends/git/shared/api');
-vi.mock('$lib/services/config', () => ({ cmsConfig: { subscribe: vi.fn() } }));
-vi.mock('svelte/store', async (importOriginal) => ({
-  .../** @type {object} */ (await importOriginal()),
-  get: vi.fn(),
-}));
+vi.mock('$lib/services/config', () => ({ cmsConfig: { current: undefined } }));
 
 /**
  * Get the request body passed to the given `fetchAPI` call.
@@ -106,7 +102,7 @@ const mockList = (byLabelId, existingLabels) => {
 describe('Gitea Editorial Workflow service', () => {
   beforeEach(() => {
     vi.resetAllMocks();
-    vi.mocked(get).mockReturnValue({ backend: { name: 'gitea' } });
+    cmsConfig.current = /** @type {any} */ ({ backend: { name: 'gitea' } });
     vi.mocked(fetchAPI).mockResolvedValue({});
     vi.mocked(decodeBase64).mockResolvedValue('');
   });
@@ -781,7 +777,7 @@ describe('Gitea Editorial Workflow service', () => {
     });
 
     test('uses a squash merge when configured', async () => {
-      vi.mocked(get).mockReturnValue({ backend: { name: 'gitea', squash_merges: true } });
+      cmsConfig.current = /** @type {any} */ ({ backend: { name: 'gitea', squash_merges: true } });
 
       await publish(
         /** @type {any} */ ({ number: 1, branch: 'cms/posts/hello', title: 't', headSHA: 'sha1' }),
@@ -796,7 +792,7 @@ describe('Gitea Editorial Workflow service', () => {
     });
 
     test('falls back to a regular merge without the config', async () => {
-      vi.mocked(get).mockReturnValue(undefined);
+      cmsConfig.current = undefined;
 
       await publish(/** @type {any} */ ({ number: 1, branch: 'cms/posts/hello', title: 't' }));
 

@@ -2,13 +2,12 @@
 
 import { decodeBase64 } from '@sveltia/utils/file';
 import { sleep } from '@sveltia/utils/misc';
-import { get } from 'svelte/store';
 
 import { commitChanges } from '$lib/services/backends/git/gitea/commits';
 import { repository } from '$lib/services/backends/git/gitea/repository';
 import { fetchAPI } from '$lib/services/backends/git/shared/api';
 import { runConcurrently } from '$lib/services/backends/git/shared/concurrency';
-import { cmsConfig } from '$lib/services/config';
+import { isSquashMergeEnabled } from '$lib/services/backends/git/shared/workflow';
 import { WORKFLOW_STATUSES } from '$lib/services/workflow/constants';
 import {
   getAllStatusLabels,
@@ -432,8 +431,7 @@ export const updateStatus = async (pullRequest, status) => {
  * @see https://docs.gitea.com/api/next/#tag/repository/operation/repoMergePullRequest
  */
 export const publish = async (pullRequest) => {
-  const { backend } = get(cmsConfig) ?? {};
-  const squash = backend && 'squash_merges' in backend ? !!backend.squash_merges : false;
+  const squash = isSquashMergeEnabled();
   const { owner, repo } = repository;
 
   for (let attempt = 0; ; attempt += 1) {
