@@ -1,7 +1,6 @@
 <script>
   import { _ } from '@sveltia/i18n';
   import { Button, EmptyState } from '@sveltia/ui';
-  import { sleep } from '@sveltia/utils/misc';
   import { untrack } from 'svelte';
 
   import EntryEditor from '$lib/components/contents/details/editor/entry-editor.svelte';
@@ -68,9 +67,23 @@
       // capture the topmost element; otherwise the List field sticky headers will interfere with
       // the positioning.
       // @see https://github.com/sveltia/sveltia-cms/issues/883
-      const thisElement = /** @type {HTMLElement | undefined} */ (
-        ownerDocument.elementsFromPoint(x + 80, y).findLast((e) => e.matches('[data-key-path]'))
+      const matches = /** @type {HTMLElement[]} */ (
+        ownerDocument.elementsFromPoint(x + 80, y).filter((e) => e.matches('[data-key-path]'))
       );
+
+      let thisElement = /** @type {HTMLElement | undefined} */ (matches.at(-1));
+
+      // When syncing with a preview rendered in an iframe, use the deepest field key path
+      // instead: the outermost match is always the fields container (e.g. `sections`), which
+      // custom preview templates do not anchor, while they anchor individual fields. Between two
+      // editor panes (i18n), matching fields share the same structure and the container works.
+      if (matches.length && (isIframe || thatPaneContentArea.ownerDocument !== document)) {
+        thisElement = matches.reduce((a, b) =>
+          (b.dataset.keyPath ?? '').split('.').length > (a.dataset.keyPath ?? '').split('.').length
+            ? b
+            : a,
+        );
+      }
 
       if (!thisElement) {
         // Calculate the scroll position based on the current scroll position of the this pane
@@ -93,8 +106,19 @@
       }
 
       // Scroll the other pane to the corresponding element, adjusting for the current scroll
-      // position and the ratio of the scroll position within the element.
-      thatPaneContentArea.scrollTop = thatElement.offsetTop - y + thatElement.clientHeight * ratio;
+      // position and the ratio of the scroll position within the element. When the target pane is
+      // an iframe, its geometry is independent from this pane’s: the pane offset must not be
+      // subtracted (it would bias the preview upwards), and the result is clamped to the
+      // scrollable range.
+      if (thatPaneContentArea.ownerDocument !== document) {
+        thatPaneContentArea.scrollTop = Math.min(
+          Math.max(thatElement.offsetTop + thatElement.clientHeight * ratio, 0),
+          thatPaneContentArea.scrollHeight - thatPaneContentArea.clientHeight,
+        );
+      } else {
+        thatPaneContentArea.scrollTop =
+          thatElement.offsetTop - y + thatElement.clientHeight * ratio;
+      }
     });
   };
 
@@ -104,30 +128,76 @@
   let initCount = 0;
 
   /**
-   * Find the preview iframe, which is used in the preview mode only when a custom preview
-   * stylesheet or template is provided. The preview is rendered lazily once it’s visible, so the
-   * iframe may not be in the DOM yet when the pane mode changes.
-   * @returns {Promise<HTMLIFrameElement | null>} Iframe, if any.
+   * Wait for the preview iframe to appear on the content area. The iframe mounts asynchronously
+   * (e.g. behind a visibility observer), so a single query when the effect runs is not enough, and
+   * falling back to the content area would permanently break the synchronization. Resolves with
+   * `null` when no iframe appears, e.g. when the built-in preview is used without a custom style.
+   * @returns {Promise<HTMLIFrameElement | null>} The preview iframe, or `null`.
    */
-  const findPreviewIframe = async () => {
-    for (let i = 0; i < 10; i += 1) {
-      const iframe = contentArea?.querySelector('iframe.preview');
+  const waitForPreviewIframe = () =>
+    new Promise((resolve) => {
+      const iframe = /** @type {HTMLIFrameElement | null} */ (
+        contentArea?.querySelector('iframe.preview')
+      );
 
-      if (iframe) {
-        return /** @type {HTMLIFrameElement} */ (iframe);
+      if (iframe || !contentArea?.isConnected) {
+        resolve(iframe);
+        return;
       }
 
-      // eslint-disable-next-line no-await-in-loop
-      await sleep(50);
-    }
+      const observer = new MutationObserver(() => {
+        const found = /** @type {HTMLIFrameElement | null} */ (
+          contentArea?.querySelector('iframe.preview')
+        );
 
-    return null;
-  };
+        if (found || !contentArea?.isConnected) {
+          observer.disconnect();
+          resolve(found);
+        }
+      });
+
+      observer.observe(/** @type {HTMLElement} */ (contentArea), {
+        childList: true,
+        subtree: true,
+      });
+
+      // Preview styles/templates can still be registered after the pane is opened; give up after
+      // some time and fall back to the content area
+      setTimeout(() => {
+        observer.disconnect();
+        resolve(null);
+      }, 10000);
+    });
+
+  /**
+   * Wait for the given iframe document to be fully loaded and return its root element. An
+   * arbitrary delay cannot guarantee that the document is the final one (the preview loads a
+   * custom stylesheet), and listeners attached to an interim document never fire. The initial
+   * `about:blank` document is also complete, hence the protocol check.
+   * @param {HTMLIFrameElement} iframe Preview iframe.
+   * @returns {Promise<HTMLElement | undefined>} The iframe document’s root element.
+   */
+  const waitForLoadedDocument = (iframe) =>
+    new Promise((resolve) => {
+      const doc = iframe.contentDocument;
+
+      if (doc && doc.readyState === 'complete' && doc.location.protocol === 'blob:') {
+        resolve(/** @type {HTMLElement} */ (doc.documentElement));
+        return;
+      }
+
+      iframe.addEventListener(
+        'load',
+        () => resolve(/** @type {HTMLElement} */ (iframe.contentDocument?.documentElement)),
+        { once: true },
+      );
+    });
 
   /**
    * Initialize the scroll synchronization by setting up event listeners and ensuring the content
    * area is ready. The content area is either the main content area or the iframe’s content area.
-   * An iframe is used only when a custom preview stylesheet is provided.
+   * An iframe is used only when a custom preview stylesheet or template is provided, and both its
+   * presence and its load state are asynchronous, so they are explicitly awaited.
    */
   const initializeScrollSync = async () => {
     if (!contentArea) {
@@ -144,30 +214,26 @@
       thisPaneContentArea.removeEventListener('touchmove', syncScrollPosition, eventOptions);
     }
 
-    const iframe = mode === 'preview' ? await findPreviewIframe() : null;
-
-    if (iframe) {
-      // Wait for the content to be loaded in the iframe
-      await sleep(250);
-    }
+    // In edit mode, the content area is used as is. In preview mode, the content is rendered in
+    // an iframe, which mounts and loads asynchronously.
+    const iframe = mode === 'preview' ? await waitForPreviewIframe() : null;
+    const rootElement = iframe ? await waitForLoadedDocument(iframe) : contentArea;
 
     if (currentCount !== initCount) {
       // The mode has changed in the meantime, and a newer initialization has taken over
       return;
     }
 
-    if (iframe) {
-      thisPaneContentArea = /** @type {HTMLElement} */ (iframe.contentDocument?.firstElementChild);
-    } else {
-      thisPaneContentArea = contentArea;
+    // The pane may have been unmounted or re-initialized while waiting
+    if (!rootElement || !contentArea?.isConnected) {
+      return;
     }
 
-    if (thisPaneContentArea) {
-      thisPaneContentArea.scrollTop = 0;
-      // Add event listeners manually to use passive mode
-      thisPaneContentArea.addEventListener('wheel', syncScrollPosition, eventOptions);
-      thisPaneContentArea.addEventListener('touchmove', syncScrollPosition, eventOptions);
-    }
+    thisPaneContentArea = /** @type {HTMLElement} */ (rootElement);
+    thisPaneContentArea.scrollTop = 0;
+    // Add event listeners manually to use passive mode
+    thisPaneContentArea.addEventListener('wheel', syncScrollPosition, eventOptions);
+    thisPaneContentArea.addEventListener('touchmove', syncScrollPosition, eventOptions);
   };
 
   $effect(() => {
